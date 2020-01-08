@@ -87,17 +87,23 @@ public class ElasticsearchJsonReader extends BaseJsonProcessor {
 
   public Pair<String, Long> getScrollAndTotalSizeThenSeekToHits() throws IOException {
     final JsonToken token = seekForward(ElasticsearchConstants.SCROLL_ID);
-    Preconditions.checkState(token == JsonToken.VALUE_STRING, "Invalid response");
+    Preconditions.checkState(token == JsonToken.VALUE_STRING, "Invalid response - looking for '_scroll_id'");
 
     final String scroll_id = parser.getValueAsString();
 
     seekForward(ElasticsearchConstants.HITS);
     final JsonToken totalSizeToken = seekForward(ElasticsearchConstants.TOTAL_HITS);
-    Preconditions.checkState(totalSizeToken == JsonToken.VALUE_NUMBER_INT, "Invalid response");
+    // in elastic v7 total_hits is an object with a attribute 'value'
+    if (totalSizeToken ==  JsonToken.START_OBJECT ) {
+      final JsonToken  totalValueToken = seekForward("value");
+      Preconditions.checkState(totalValueToken == JsonToken.VALUE_NUMBER_INT, "Invalid response - looking for 'total object with value'");
+    } else {
+      Preconditions.checkState(totalSizeToken == JsonToken.VALUE_NUMBER_INT, "Invalid response - looking for 'total'");
+    }
     final long totalSize = parser.getValueAsLong();
 
     final JsonToken hitsToken = seekForward(ElasticsearchConstants.HITS);
-    Preconditions.checkState(hitsToken == JsonToken.START_ARRAY, "Invalid response");
+    Preconditions.checkState(hitsToken == JsonToken.START_ARRAY, "Invalid response - looking for 'hits'");
     return new Pair<>(scroll_id, totalSize);
   }
 
@@ -396,7 +402,10 @@ public class ElasticsearchJsonReader extends BaseJsonProcessor {
           parser.skipChildren();
         }
       } else {
-        break;
+        if (token == JsonToken.END_OBJECT) { 
+          continue;
+        }
+        break; // ??
       }
     }
 
